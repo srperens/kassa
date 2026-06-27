@@ -1,0 +1,30 @@
+{
+  "name": "kassa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first checkbook: track a balance, add/subtract money, with weekly allowance. Offline PWA with sync.",
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "build": "vite build && node scripts/inject-sw.mjs && tsc -p server/tsconfig.json",
+    "start": "node dist/server/index.js",
+    "gen-icons": "node scripts/gen-icons.mjs",
+    "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/static": "^7.0.4",
+    "better-sqlite3": "^11.3.0",
+    "fastify": "^4.28.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "concurrently": "^9.0.1",
+    "idb": "^8.0.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

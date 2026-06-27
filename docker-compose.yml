@@ -1,0 +1,18 @@
+services:
+  kassa:
+    build: .
+    image: kassa:latest
+    container_name: kassa
+    restart: unless-stopped
+    ports:
+      # loog already uses host port 3000 on the target server; kassa takes 3001.
+      - "3001:3000"
+    environment:
+      # Set KASSA_TOKENS in a .env file next to this compose file.
+      - KASSA_TOKENS=${KASSA_TOKENS:?set KASSA_TOKENS in .env}
+      - KASSA_DB=/data/kassa.sqlite
+    volumes:
+      - kassa-data:/data
+
+volumes:
+  kassa-data:

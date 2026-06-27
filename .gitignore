@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
+*.log
+.env
+
+# local DB backups pulled from the server
+backups/
+
+# Claude Code local settings
+.claude/
