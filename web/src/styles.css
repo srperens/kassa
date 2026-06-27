@@ -369,7 +369,10 @@ button {
   border: 1px solid var(--line);
   border-radius: 22px 22px 0 0;
   padding: 18px 18px calc(env(safe-area-inset-bottom, 0px) + 22px);
-  overflow-x: hidden;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
   transform: translateY(20px);
   transition: transform 0.2s ease;
 }
