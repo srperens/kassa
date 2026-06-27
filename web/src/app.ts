@@ -15,6 +15,7 @@ import {
   deleteAccount,
   deleteTx,
   renameAccount,
+  setCurrency,
   updateAllowance,
   updateTx,
 } from './model';
@@ -22,7 +23,7 @@ import { getUser, isLoggedIn, login, logout } from './auth';
 import { onIncomingTxs, onSyncStatus, startAutoSync, sync, type SyncStatus } from './sync';
 import { catchUpSchedules, nextAllowance } from './schedule';
 import { notify, notifyEnabled, setNotifyPref } from './notify';
-import { kr, krSigned, parseKr } from './money';
+import { CURRENCY_CODES, currencySymbol, money, moneySigned, parseMoney } from './money';
 import { getLang, locale, setLang, t, weekdayName, type Lang } from './i18n';
 
 // Register the service worker in production only (avoids stale caches in dev).
@@ -44,6 +45,11 @@ interface State {
 const state: State = { accounts: [], activeId: null, txs: [], balance: 0, status: 'idle' };
 
 const QUICK_ORE = [1000, 2000, 5000, 10000];
+
+// Display currency for an account id (falls back to SEK if not found/loaded).
+function accCurrency(accountId: string): string {
+  return state.accounts.find((a) => a.id === accountId)?.currency ?? 'SEK';
+}
 
 // --- formatting (rebuilt per call so a language change takes effect immediately) ---
 function dayFmt(): Intl.DateTimeFormat {
@@ -158,10 +164,10 @@ function render(): void {
   const card = el(`
     <section class="balance-card" style="--accent:${active.color}">
       <div class="balance-name">${esc(active.name)}</div>
-      <div class="balance-amount ${neg ? 'neg' : ''}">${kr(state.balance)}</div>
+      <div class="balance-amount ${neg ? 'neg' : ''}">${money(state.balance, active.currency)}</div>
       ${
         next
-          ? `<div class="balance-next">${esc(t('balance.next', { date: dayFmt().format(next), amount: kr(active.allowanceOre) }))}</div>`
+          ? `<div class="balance-next">${esc(t('balance.next', { date: dayFmt().format(next), amount: money(active.allowanceOre, active.currency) }))}</div>`
           : `<div class="balance-next muted">${esc(t('balance.none'))}</div>`
       }
     </section>
@@ -207,7 +213,7 @@ function render(): void {
             <span class="tnote">${noteText}</span>
             ${meta ? `<span class="tmeta">${meta}</span>` : ''}
           </span>
-          <span class="tamt ${tx.amountOre < 0 ? 'neg' : 'pos'}">${krSigned(tx.amountOre)}</span>
+          <span class="tamt ${tx.amountOre < 0 ? 'neg' : 'pos'}">${moneySigned(tx.amountOre, active.currency)}</span>
         </button>`,
       );
       row.onclick = () => openTx(tx);
@@ -223,7 +229,7 @@ function openAmount(acc: LocalAccount, sign: 1 | -1): void {
   const content = el(`
     <div class="form">
       <h2>${esc(isAdd ? t('amount.add.title') : t('amount.sub.title'))}</h2>
-      <label>${esc(t('amount.label'))}
+      <label>${esc(t('amount.label', { cur: currencySymbol(acc.currency) }))}
         <input id="m-amt" inputmode="decimal" placeholder="0" autocomplete="off">
       </label>
       <div class="quickamts" id="m-quick"></div>
@@ -243,7 +249,7 @@ function openAmount(acc: LocalAccount, sign: 1 | -1): void {
 
   const quick = content.querySelector<HTMLDivElement>('#m-quick')!;
   for (const ore of QUICK_ORE) {
-    const chip = el(`<button type="button" class="qchip">${kr(ore)}</button>`);
+    const chip = el(`<button type="button" class="qchip">${money(ore, acc.currency)}</button>`);
     chip.onclick = () => {
       amt.value = String(ore / 100);
       amt.focus();
@@ -252,7 +258,7 @@ function openAmount(acc: LocalAccount, sign: 1 | -1): void {
   }
 
   const submit = async () => {
-    const ore = parseKr(amt.value);
+    const ore = parseMoney(amt.value);
     if (ore === null || ore <= 0) {
       amt.focus();
       amt.classList.add('shake');
@@ -263,7 +269,7 @@ function openAmount(acc: LocalAccount, sign: 1 | -1): void {
     await addTx(acc.id, sign * ore, noteEl.value);
     close();
     await refresh();
-    flash(isAdd ? t('flash.added', { amount: kr(ore) }) : t('flash.subtracted', { amount: kr(ore) }));
+    flash(isAdd ? t('flash.added', { amount: money(ore, acc.currency) }) : t('flash.subtracted', { amount: money(ore, acc.currency) }));
   };
   content.querySelector<HTMLButtonElement>('#m-ok')!.onclick = () => void submit();
   content.querySelector<HTMLButtonElement>('#m-cancel')!.onclick = () => close();
@@ -282,7 +288,7 @@ async function openTx(tx: LocalTx): Promise<void> {
   const content = el(`
     <div class="form">
       <h2>${esc(tx.kind === 'scheduled' ? t('tx.title.scheduled') : t('tx.title.manual'))}</h2>
-      <label>${esc(t('tx.amount.label'))}
+      <label>${esc(t('tx.amount.label', { cur: currencySymbol(accCurrency(tx.accountId)) }))}
         <input id="f-amt" inputmode="decimal" value="${(tx.amountOre / 100).toString().replace('.', getLang() === 'sv' ? ',' : '.')}">
       </label>
       <label>${esc(t('tx.time'))}<input type="datetime-local" id="f-ts" value="${localIso}"></label>
@@ -298,7 +304,7 @@ async function openTx(tx: LocalTx): Promise<void> {
   content.querySelector<HTMLButtonElement>('#f-save')!.onclick = async () => {
     const raw = content.querySelector<HTMLInputElement>('#f-amt')!.value.trim();
     const negative = raw.startsWith('-') || raw.startsWith('−');
-    const ore = parseKr(raw.replace(/^[-−]/, ''));
+    const ore = parseMoney(raw.replace(/^[-−]/, ''));
     if (ore === null) return;
     const tsVal = content.querySelector<HTMLInputElement>('#f-ts')!.value;
     const ts = tsVal ? new Date(tsVal).getTime() : tx.ts;
@@ -318,7 +324,8 @@ async function openTx(tx: LocalTx): Promise<void> {
 async function newAccountFlow(): Promise<void> {
   const name = await prompt2(t('account.name'), '', t('btn.create'));
   if (name === null) return;
-  const acc = await createAccount(name);
+  const current = state.accounts.find((a) => a.id === state.activeId);
+  const acc = await createAccount(name, current?.currency ?? 'SEK');
   await loadAccounts();
   await setActive(acc.id);
 }
@@ -343,8 +350,12 @@ function openSettings(): void {
       ${
         acc
           ? `<hr>
+        <label>${esc(t('settings.currency'))}
+          <select id="s-cur">${CURRENCY_CODES.map((c) => `<option value="${c}" ${c === acc.currency ? 'selected' : ''}>${c} (${currencySymbol(c)})</option>`).join('')}</select>
+        </label>
+        <hr>
         <div class="meta">${t('settings.allowance.for', { name: `<b>${esc(acc.name)}</b>` })}</div>
-        <label>${esc(t('settings.allowance.amount'))}
+        <label>${esc(t('settings.allowance.amount', { cur: currencySymbol(acc.currency) }))}
           <input id="s-amt" inputmode="decimal" value="${acc.allowanceOre ? (acc.allowanceOre / 100).toString().replace('.', getLang() === 'sv' ? ',' : '.') : ''}" placeholder="${esc(t('settings.allowance.amount.ph'))}">
         </label>
         <label>${esc(t('settings.weekday'))}
@@ -384,9 +395,16 @@ function openSettings(): void {
     if (now) void notify(t('brand'), t('settings.notify.test'));
   };
 
+  content.querySelector<HTMLSelectElement>('#s-cur')?.addEventListener('change', async (e) => {
+    if (!acc) return;
+    await setCurrency(acc.id, (e.target as HTMLSelectElement).value);
+    close();
+    await refresh();
+  });
+
   content.querySelector<HTMLButtonElement>('#s-allow')?.addEventListener('click', async () => {
     if (!acc) return;
-    const ore = parseKr(content.querySelector<HTMLInputElement>('#s-amt')!.value) ?? 0;
+    const ore = parseMoney(content.querySelector<HTMLInputElement>('#s-amt')!.value) ?? 0;
     const day = Number(content.querySelector<HTMLSelectElement>('#s-day')!.value);
     // Start from today so enabling it doesn't backfill weeks of history.
     await updateAllowance(acc.id, ore, day, Date.now());
@@ -506,7 +524,7 @@ async function runCatchUp(): Promise<void> {
     for (const tx of created) byAcc.set(tx.accountId, (byAcc.get(tx.accountId) ?? 0) + tx.amountOre);
     for (const [accId, ore] of byAcc) {
       const acc = state.accounts.find((a) => a.id === accId);
-      void notify(t('notify.allowance.title'), t('notify.allowance.body', { amount: kr(ore), name: acc?.name ?? '' }));
+      void notify(t('notify.allowance.title'), t('notify.allowance.body', { amount: money(ore, acc?.currency), name: acc?.name ?? '' }));
     }
     await loadTxs();
     render();
@@ -575,7 +593,7 @@ async function startApp(): Promise<void> {
     for (const tx of txs) {
       if (tx.kind !== 'manual' || tx.author === me) continue;
       const accName = state.accounts.find((a) => a.id === tx.accountId)?.name ?? '';
-      void notify(tx.author || t('brand'), `${krSigned(tx.amountOre)} · ${accName}${tx.note ? ` (${tx.note})` : ''}`);
+      void notify(tx.author || t('brand'), `${moneySigned(tx.amountOre, accCurrency(tx.accountId))} · ${accName}${tx.note ? ` (${tx.note})` : ''}`);
     }
   });
 

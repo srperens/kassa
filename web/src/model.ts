@@ -23,12 +23,13 @@ function kick(): void {
 }
 
 // --- accounts ---
-export async function createAccount(name: string): Promise<LocalAccount> {
+export async function createAccount(name: string, currency = 'SEK'): Promise<LocalAccount> {
   const t = now();
   const account: LocalAccount = {
     id: uuid(),
     name: name.trim() || 'Nytt konto',
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    currency,
     allowanceOre: 0,
     allowanceWeekday: 0, // Sunday
     allowanceStart: t,
@@ -69,6 +70,13 @@ export async function updateAllowance(
     updatedAt: now(),
     dirty: 1,
   });
+  kick();
+}
+
+export async function setCurrency(id: string, currency: string): Promise<void> {
+  const acc = await getAccount(id);
+  if (!acc) return;
+  await putAccountLocal({ ...acc, currency, updatedAt: now(), dirty: 1 });
   kick();
 }
 

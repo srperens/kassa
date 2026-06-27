@@ -50,12 +50,21 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
 }
 
 // --- accounts ---
+// Ensure fields added after the initial schema are present on records that may
+// predate them (older local DBs / records synced from older clients).
+function normAccount(a: LocalAccount): LocalAccount {
+  return a.currency ? a : { ...a, currency: 'SEK' };
+}
 export async function allAccounts(): Promise<LocalAccount[]> {
   const accounts = await (await getDB()).getAll('accounts');
-  return accounts.filter((a) => !a.deleted).sort((a, b) => a.createdAt - b.createdAt);
+  return accounts
+    .filter((a) => !a.deleted)
+    .map(normAccount)
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 export async function getAccount(id: string): Promise<LocalAccount | undefined> {
-  return (await getDB()).get('accounts', id);
+  const a = await (await getDB()).get('accounts', id);
+  return a ? normAccount(a) : a;
 }
 export async function putAccountLocal(account: LocalAccount): Promise<void> {
   await (await getDB()).put('accounts', account);
@@ -102,6 +111,7 @@ export async function exportAll(): Promise<unknown[]> {
       id: a.id,
       name: a.name,
       color: a.color,
+      currency: a.currency,
       allowanceOre: a.allowanceOre,
       allowanceWeekday: a.allowanceWeekday,
       balanceOre,

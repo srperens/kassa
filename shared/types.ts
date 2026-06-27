@@ -2,14 +2,17 @@
 // Every record has a server-assigned `seq` (0 locally until synced) and uses
 // last-write-wins via `updatedAt`. Deletion is soft (deleted=1) so it can sync.
 //
-// Money is stored as an integer number of öre (1 kr = 100 öre) to avoid floating
-// point rounding. Positive amount = money in, negative = money out. The current
-// balance of an account is just the sum of its (non-deleted) transactions.
+// Money is stored as an integer number of minor units (1 kr = 100 öre, $1 = 100
+// cents) to avoid floating point rounding. Positive amount = money in, negative =
+// money out. The current balance of an account is just the sum of its
+// (non-deleted) transactions. `currency` is a per-account display label only —
+// amounts are never converted between currencies.
 
 export interface Account {
   id: string;
   name: string;
   color: string;
+  currency: string; // ISO 4217-ish code: 'SEK' | 'USD' | 'EUR' | 'GBP'
 
   // Weekly allowance ("veckopeng"). 0 amount = no schedule.
   allowanceOre: number; // amount added each period, in öre

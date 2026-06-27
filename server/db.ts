@@ -14,6 +14,7 @@ db.exec(`
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL,
     color            TEXT NOT NULL DEFAULT '',
+    currency         TEXT NOT NULL DEFAULT 'SEK',
     allowanceOre     INTEGER NOT NULL DEFAULT 0,
     allowanceWeekday INTEGER NOT NULL DEFAULT 0,
     allowanceStart   INTEGER NOT NULL DEFAULT 0,
@@ -44,6 +45,16 @@ db.exec(`
   INSERT OR IGNORE INTO meta (key, value) VALUES ('seq', 0);
 `);
 
+// Columns added after the initial schema. CREATE TABLE IF NOT EXISTS won't add
+// them to a pre-existing database, so ALTER them in (no-op if already present).
+for (const stmt of [`ALTER TABLE accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'SEK'`]) {
+  try {
+    db.exec(stmt);
+  } catch {
+    // column already exists
+  }
+}
+
 // Monotonic, global sequence number. Every write gets a fresh seq so clients
 // can pull "everything newer than X" without trusting clocks.
 function nextSeq(): number {
@@ -65,10 +76,10 @@ const selAccount = db.prepare(`SELECT * FROM accounts WHERE id = ?`);
 const selTx = db.prepare(`SELECT * FROM txs WHERE id = ?`);
 
 const upAccount = db.prepare(`
-  INSERT INTO accounts (id, name, color, allowanceOre, allowanceWeekday, allowanceStart, createdAt, updatedAt, deleted, seq)
-  VALUES (@id, @name, @color, @allowanceOre, @allowanceWeekday, @allowanceStart, @createdAt, @updatedAt, @deleted, @seq)
+  INSERT INTO accounts (id, name, color, currency, allowanceOre, allowanceWeekday, allowanceStart, createdAt, updatedAt, deleted, seq)
+  VALUES (@id, @name, @color, @currency, @allowanceOre, @allowanceWeekday, @allowanceStart, @createdAt, @updatedAt, @deleted, @seq)
   ON CONFLICT(id) DO UPDATE SET
-    name=@name, color=@color, allowanceOre=@allowanceOre, allowanceWeekday=@allowanceWeekday,
+    name=@name, color=@color, currency=@currency, allowanceOre=@allowanceOre, allowanceWeekday=@allowanceWeekday,
     allowanceStart=@allowanceStart, createdAt=@createdAt, updatedAt=@updatedAt, deleted=@deleted, seq=@seq
 `);
 
@@ -84,7 +95,8 @@ const upTx = db.prepare(`
 export function applyAccount(incoming: Account): void {
   const existing = selAccount.get(incoming.id) as Account | undefined;
   if (existing && existing.updatedAt > incoming.updatedAt) return;
-  upAccount.run({ ...incoming, deleted: incoming.deleted ? 1 : 0, seq: nextSeq() });
+  // currency may be missing from clients predating multi-currency support.
+  upAccount.run({ ...incoming, currency: incoming.currency || 'SEK', deleted: incoming.deleted ? 1 : 0, seq: nextSeq() });
 }
 
 export function applyTx(incoming: Tx): void {
