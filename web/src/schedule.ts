@@ -56,8 +56,13 @@ export async function catchUpSchedules(now = Date.now()): Promise<Tx[]> {
         note: 'Veckopeng',
         author: '',
         kind: 'scheduled',
-        createdAt: now,
-        updatedAt: now,
+        // Deterministic timestamps tied to the occurrence date, NOT `now`. A
+        // scheduled row represents the same logical event on every device, and a
+        // human deletion always happens AFTER the occurrence date — so a delete's
+        // `updatedAt` always beats this one under LWW and can never be resurrected
+        // by another device that re-materializes the occurrence before syncing.
+        createdAt: date.getTime(),
+        updatedAt: date.getTime(),
         deleted: 0,
         seq: 0,
         dirty: 1,
