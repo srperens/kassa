@@ -3,10 +3,11 @@
 # the server has no git creds) — we copy the built image instead of building there.
 #
 # Usage:  ./scripts/deploy.sh
-# Env:    KASSA_HOST (default: vnic1), KASSA_REMOTE_DIR (default: kassa, under $HOME)
+# Env:    KASSA_HOST (default: your-server), KASSA_REMOTE_DIR (default: kassa, under $HOME)
+#         KASSA_HOST is an ssh target (host alias, or user@host).
 set -euo pipefail
 
-HOST="${KASSA_HOST:-vnic1}"
+HOST="${KASSA_HOST:-your-server}"
 REMOTE_DIR="${KASSA_REMOTE_DIR:-kassa}"
 IMAGE="kassa:latest"
 

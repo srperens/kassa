@@ -26,7 +26,7 @@ function emit(status: SyncStatus): void {
 }
 
 // Callback fired when sync pulled in NEW transactions made by someone else, so
-// the UI can show a local notification ("Lena: utlägg −30 kr").
+// the UI can show a local notification (e.g. "<name>: utlägg −30 kr").
 type IncomingListener = (txs: Tx[]) => void;
 const incomingListeners = new Set<IncomingListener>();
 export function onIncomingTxs(fn: IncomingListener): () => void {

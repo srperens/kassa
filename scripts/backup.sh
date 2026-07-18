@@ -6,10 +6,11 @@
 # snapshot is streamed out over SSH; nothing sensitive is left on the server.
 #
 # Usage:  ./scripts/backup.sh [output-dir]      (default output dir: ./backups)
-# Env:    KASSA_HOST (default: vnic1), KASSA_CONTAINER (default: kassa)
+# Env:    KASSA_HOST (default: your-server), KASSA_CONTAINER (default: kassa)
+#         KASSA_HOST is an ssh target (host alias, or user@host).
 set -euo pipefail
 
-HOST="${KASSA_HOST:-vnic1}"
+HOST="${KASSA_HOST:-your-server}"
 CONTAINER="${KASSA_CONTAINER:-kassa}"
 OUT_DIR="${1:-backups}"
 STAMP="$(date +%Y%m%d-%H%M%S)"

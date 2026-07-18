@@ -22,6 +22,7 @@ No server cron — the app catches up on every launch.
 - Notes on any transaction
 - Optional recurring entries (e.g. a weekly allowance), added automatically and offline-safe
 - Multiple accounts, switchable via tabs
+- Read-only "view" logins for people who should follow along but not edit
 - Offline-first (IndexedDB + service worker), syncs when the network returns
 - English and Swedish
 
@@ -40,24 +41,29 @@ Open http://localhost:5173 and log in. The dev key is `dev-token` unless you set
 
 ```bash
 npm run build
-KASSA_TOKENS=alice:secret1,bob:secret2 PORT=3000 npm start
+KASSA_TOKENS=user1:secret1,user2:secret2 PORT=3000 npm start
 ```
 
 The server serves the built PWA and the `/api/*` endpoints from the same port.
 
 ### Environment variables
 
-| Variable       | Default             | Description                       |
-| -------------- | ------------------- | --------------------------------- |
-| `PORT`         | `3000`              | Port the server listens on        |
-| `HOST`         | `0.0.0.0`           | Bind address                      |
-| `KASSA_TOKENS` | `dev:dev-token`     | API keys: `name:token,name:token` |
-| `KASSA_DB`     | `dist/kassa.sqlite` | Path to the SQLite file           |
+| Variable            | Default             | Description                                          |
+| ------------------- | ------------------- | ---------------------------------------------------- |
+| `PORT`              | `3000`              | Port the server listens on                           |
+| `HOST`              | `0.0.0.0`           | Bind address                                         |
+| `KASSA_TOKENS`      | `dev:dev-token`     | API keys: `name:token,name:token`                    |
+| `KASSA_VIEW_TOKENS` | _(empty)_           | Read-only keys, same format — holders can view, not edit |
+| `KASSA_DB`          | `dist/kassa.sqlite` | Path to the SQLite file                              |
 
 Authentication: the app shell is public, all data requires a valid API key. Keys
-live only in `KASSA_TOKENS` and can be revoked by removing them.
+live only in `KASSA_TOKENS` / `KASSA_VIEW_TOKENS` and can be revoked by removing
+them. A `KASSA_VIEW_TOKENS` holder can log in and see everything but cannot add,
+edit or delete — the server ignores their writes.
 
 ## Docker
+
+Build and run locally with Compose:
 
 ```bash
 docker compose up -d --build
@@ -65,6 +71,23 @@ docker compose up -d --build
 
 The SQLite database is stored in the `kassa-data` volume so it survives rebuilds.
 Set `KASSA_TOKENS` in a `.env` file first.
+
+### Published image
+
+A `linux/amd64` image is built and published to the GitHub Container Registry on
+every push to `main` and every `v*` tag:
+
+```bash
+docker run -d -p 3000:3000 \
+  -e KASSA_TOKENS=user1:secret1,user2:secret2 \
+  -v kassa-data:/data \
+  ghcr.io/<owner>/kassa:latest
+```
+
+Replace `<owner>` with the GitHub account or org that owns the repository. The
+workflow itself derives this automatically. Available tags: `latest`, a semver
+tag per release (e.g. `0.1.0`, `0.1`), and a `sha-<commit>` tag for pinning to
+an exact build.
 
 ## License
 
