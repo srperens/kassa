@@ -4,8 +4,8 @@ import { allAccounts, getTx, putTxLocal, type LocalAccount } from './store';
 // Weekly allowance ("veckopeng") without a server cron.
 //
 // The trick that makes this work offline AND across two phones: each occurrence
-// gets a DETERMINISTIC id, `sched:<accountId>:<YYYY-MM-DD>`. Both Per's and Lena's
-// devices independently compute the same occurrences and create the same ids, so
+// gets a DETERMINISTIC id, `sched:<accountId>:<YYYY-MM-DD>`. Both devices
+// independently compute the same occurrences and create the same ids, so
 // when they sync the duplicates collapse to one record (same primary key) — never
 // two. It's purely additive to the ledger, so the balance stays correct.
 //

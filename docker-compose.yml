@@ -5,7 +5,8 @@ services:
     container_name: kassa
     restart: unless-stopped
     ports:
-      # loog already uses host port 3000 on the target server; kassa takes 3001.
+      # Host port 3001 -> container port 3000. Change the left side if 3000 is
+      # already taken on the host.
       - "3001:3000"
     environment:
       # Set KASSA_TOKENS in a .env file next to this compose file.
