@@ -19,7 +19,7 @@ import {
   updateAllowance,
   updateTx,
 } from './model';
-import { getUser, isLoggedIn, login, logout } from './auth';
+import { getUser, isLoggedIn, isReadonly, login, logout } from './auth';
 import { onIncomingTxs, onSyncStatus, startAutoSync, sync, type SyncStatus } from './sync';
 import { catchUpSchedules, nextAllowance } from './schedule';
 import { notify, notifyEnabled, setNotifyPref } from './notify';
@@ -146,9 +146,12 @@ function render(): void {
     tab.onclick = () => void setActive(acc.id);
     tabs.appendChild(tab);
   }
-  const addTab = el(`<button class="tab add" title="${esc(t('accounts.new'))}">+</button>`);
-  addTab.onclick = () => void newAccountFlow();
-  tabs.appendChild(addTab);
+  // A viewer can't create accounts, so no "+" tab for them.
+  if (!isReadonly()) {
+    const addTab = el(`<button class="tab add" title="${esc(t('accounts.new'))}">+</button>`);
+    addTab.onclick = () => void newAccountFlow();
+    tabs.appendChild(addTab);
+  }
   root.appendChild(tabs);
 
   if (!active) {
@@ -174,16 +177,18 @@ function render(): void {
   `);
   root.appendChild(card);
 
-  // Action buttons
-  const actions = el(`
-    <div class="actions">
-      <button class="act add" id="a-add">${esc(t('action.add'))}</button>
-      <button class="act sub" id="a-sub">${esc(t('action.sub'))}</button>
-    </div>
-  `);
-  actions.querySelector<HTMLButtonElement>('#a-add')!.onclick = () => openAmount(active, +1);
-  actions.querySelector<HTMLButtonElement>('#a-sub')!.onclick = () => openAmount(active, -1);
-  root.appendChild(actions);
+  // Action buttons — hidden for a view-only login.
+  if (!isReadonly()) {
+    const actions = el(`
+      <div class="actions">
+        <button class="act add" id="a-add">${esc(t('action.add'))}</button>
+        <button class="act sub" id="a-sub">${esc(t('action.sub'))}</button>
+      </div>
+    `);
+    actions.querySelector<HTMLButtonElement>('#a-add')!.onclick = () => openAmount(active, +1);
+    actions.querySelector<HTMLButtonElement>('#a-sub')!.onclick = () => openAmount(active, -1);
+    root.appendChild(actions);
+  }
 
   // Transaction list
   const list = el(`<div class="txs"></div>`);
@@ -285,22 +290,32 @@ async function openTx(tx: LocalTx): Promise<void> {
   const metaLine = tx.author
     ? t('tx.meta.by', { author: tx.author, date: fullFmt().format(new Date(tx.createdAt)) })
     : t('tx.meta', { date: fullFmt().format(new Date(tx.createdAt)) });
+  const ro = isReadonly();
+  const dis = ro ? 'disabled' : '';
   const content = el(`
     <div class="form">
       <h2>${esc(tx.kind === 'scheduled' ? t('tx.title.scheduled') : t('tx.title.manual'))}</h2>
       <label>${esc(t('tx.amount.label', { cur: currencySymbol(accCurrency(tx.accountId)) }))}
-        <input id="f-amt" inputmode="decimal" value="${(tx.amountOre / 100).toString().replace('.', getLang() === 'sv' ? ',' : '.')}">
+        <input id="f-amt" inputmode="decimal" ${dis} value="${(tx.amountOre / 100).toString().replace('.', getLang() === 'sv' ? ',' : '.')}">
       </label>
-      <label>${esc(t('tx.time'))}<input type="datetime-local" id="f-ts" value="${localIso}"></label>
-      <label>${esc(t('tx.note'))}<input id="f-note" value="${esc(tx.note)}"></label>
+      <label>${esc(t('tx.time'))}<input type="datetime-local" id="f-ts" ${dis} value="${localIso}"></label>
+      <label>${esc(t('tx.note'))}<input id="f-note" ${dis} value="${esc(tx.note)}"></label>
       <div class="meta">${esc(metaLine)}</div>
-      <div class="row">
+      ${
+        ro
+          ? `<div class="row"><button class="btn" id="f-close">${esc(t('btn.close'))}</button></div>`
+          : `<div class="row">
         <button class="btn danger" id="f-del">${esc(t('btn.delete'))}</button>
         <button class="btn primary" id="f-save">${esc(t('btn.save'))}</button>
-      </div>
+      </div>`
+      }
     </div>
   `);
   const close = openModal(content);
+  if (ro) {
+    content.querySelector<HTMLButtonElement>('#f-close')!.onclick = () => close();
+    return;
+  }
   content.querySelector<HTMLButtonElement>('#f-save')!.onclick = async () => {
     const raw = content.querySelector<HTMLInputElement>('#f-amt')!.value.trim();
     const negative = raw.startsWith('-') || raw.startsWith('−');
@@ -336,7 +351,7 @@ function openSettings(): void {
   const content = el(`
     <div class="form">
       <h2>${esc(t('settings.title'))}</h2>
-      <div class="meta">${t('settings.loggedin', { user: `<b>${esc(getUser() || '—')}</b>` })}</div>
+      <div class="meta">${t('settings.loggedin', { user: `<b>${esc(getUser() || '—')}</b>` })}${isReadonly() ? ` · <b>${esc(t('settings.viewer'))}</b>` : ''}</div>
       <div class="row">
         <button class="btn" id="s-sync">${esc(t('settings.sync'))}</button>
         <button class="btn" id="s-notify">${esc(t('settings.notify', { state: t('settings.notify.dots') }))}</button>
@@ -348,7 +363,7 @@ function openSettings(): void {
         </select>
       </label>
       ${
-        acc
+        acc && !isReadonly()
           ? `<hr>
         <label>${esc(t('settings.currency'))}
           <select id="s-cur">${CURRENCY_CODES.map((c) => `<option value="${c}" ${c === acc.currency ? 'selected' : ''}>${c} (${currencySymbol(c)})</option>`).join('')}</select>
@@ -517,6 +532,9 @@ function flash(text: string): void {
 
 // --- scheduled allowance catch-up ---
 async function runCatchUp(): Promise<void> {
+  // A viewer never materializes allowances — the real users' devices do, and the
+  // viewer just pulls them. Creating them here would only make local-only rows.
+  if (isReadonly()) return;
   const created = await catchUpSchedules();
   if (created.length) {
     void sync();

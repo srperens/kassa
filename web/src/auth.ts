@@ -5,12 +5,17 @@
 
 const KEY_TOKEN = 'kassa.token';
 const KEY_USER = 'kassa.user';
+const KEY_READONLY = 'kassa.readonly';
 
 export function getToken(): string {
   return localStorage.getItem(KEY_TOKEN) ?? '';
 }
 export function getUser(): string {
   return localStorage.getItem(KEY_USER) ?? '';
+}
+// A "view" login: can see everything but not add/edit/delete anything.
+export function isReadonly(): boolean {
+  return localStorage.getItem(KEY_READONLY) === '1';
 }
 export function isLoggedIn(): boolean {
   return !!getToken() && !!getUser();
@@ -19,6 +24,7 @@ export function isLoggedIn(): boolean {
 export function logout(): void {
   localStorage.removeItem(KEY_TOKEN);
   localStorage.removeItem(KEY_USER);
+  localStorage.removeItem(KEY_READONLY);
 }
 
 // Validate a key against the server. On success, store it + the user name and
@@ -35,8 +41,9 @@ export async function login(token: string): Promise<string> {
   }
   if (res.status === 401) throw new Error('unauthorized');
   if (!res.ok) throw new Error('server');
-  const data = (await res.json()) as { ok: boolean; user: string };
+  const data = (await res.json()) as { ok: boolean; user: string; readonly?: boolean };
   localStorage.setItem(KEY_TOKEN, token.trim());
   localStorage.setItem(KEY_USER, data.user);
+  localStorage.setItem(KEY_READONLY, data.readonly ? '1' : '0');
   return data.user;
 }
