@@ -10,6 +10,8 @@ services:
     environment:
       # Set KASSA_TOKENS in a .env file next to this compose file.
       - KASSA_TOKENS=${KASSA_TOKENS:?set KASSA_TOKENS in .env}
+      # Optional read-only "view" keys (see .env.example). Empty if unset.
+      - KASSA_VIEW_TOKENS=${KASSA_VIEW_TOKENS:-}
       - KASSA_DB=/data/kassa.sqlite
     volumes:
       - kassa-data:/data
