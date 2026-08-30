@@ -91,6 +91,20 @@ workflow itself derives this automatically. Available tags: `latest`, a semver
 tag per release (e.g. `0.1.0`, `0.1`), and a `sha-<commit>` tag for pinning to
 an exact build.
 
+### Deploying an update
+
+Merging to `main` is the deploy: the workflow publishes a new `latest`, and the
+server only has to pull it. On a host whose `docker-compose.yml` points at the
+published image rather than `build: .`:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Nothing is compiled on the server, so a small box can't run out of memory
+rebuilding the native SQLite addon. The database lives in the named volume, not
+in the checkout, so it survives the container being recreated.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
