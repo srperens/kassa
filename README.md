@@ -20,6 +20,8 @@ No server cron — the app catches up on every launch.
 
 - Big balance with two buttons: Add / Subtract
 - Notes on any transaction
+- Configurable quick buttons for recurring amounts (e.g. "Robux −65 kr"), one tap to book,
+  choose which accounts each one shows on
 - Optional recurring entries (e.g. a weekly allowance), added automatically and offline-safe
 - Multiple accounts, switchable via tabs
 - Read-only "view" logins for people who should follow along but not edit

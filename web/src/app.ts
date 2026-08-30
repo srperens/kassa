@@ -1,22 +1,27 @@
 import './styles.css';
 import {
   allAccounts,
+  allShortcuts,
   balanceOf,
   exportAll,
   kvGet,
   kvSet,
   txsForAccount,
   type LocalAccount,
+  type LocalShortcut,
   type LocalTx,
 } from './store';
 import {
   addTx,
   createAccount,
+  createShortcut,
   deleteAccount,
+  deleteShortcut,
   deleteTx,
   renameAccount,
   setCurrency,
   updateAllowance,
+  updateShortcut,
   updateTx,
 } from './model';
 import { getUser, isLoggedIn, isReadonly, login, logout } from './auth';
@@ -40,9 +45,10 @@ interface State {
   activeId: string | null;
   txs: LocalTx[];
   balance: number;
+  shortcuts: LocalShortcut[];
   status: SyncStatus;
 }
-const state: State = { accounts: [], activeId: null, txs: [], balance: 0, status: 'idle' };
+const state: State = { accounts: [], activeId: null, txs: [], balance: 0, shortcuts: [], status: 'idle' };
 
 const QUICK_ORE = [1000, 2000, 5000, 10000];
 
@@ -108,7 +114,14 @@ async function loadTxs(): Promise<void> {
 async function refresh(): Promise<void> {
   await loadAccounts();
   await loadTxs();
+  state.shortcuts = await allShortcuts();
   render();
+}
+
+// The quick buttons that show on a given account: an empty `accountIds` means
+// every account, otherwise only the ones ticked when it was configured.
+function shortcutsFor(accountId: string): LocalShortcut[] {
+  return state.shortcuts.filter((s) => s.accountIds.length === 0 || s.accountIds.includes(accountId));
 }
 
 async function setActive(id: string): Promise<void> {
@@ -188,6 +201,23 @@ function render(): void {
     actions.querySelector<HTMLButtonElement>('#a-add')!.onclick = () => openAmount(active, +1);
     actions.querySelector<HTMLButtonElement>('#a-sub')!.onclick = () => openAmount(active, -1);
     root.appendChild(actions);
+
+    // Quick buttons: one tap books the transaction straight away.
+    const quick = shortcutsFor(active.id);
+    if (quick.length) {
+      const row = el(`<div class="shortcuts"></div>`);
+      for (const sc of quick) {
+        const btn = el(
+          `<button class="sc ${sc.amountOre < 0 ? 'sub' : 'add'}">
+            ${sc.note ? `<span class="sc-note">${esc(sc.note)}</span>` : ''}
+            <span class="sc-amt">${moneySigned(sc.amountOre, active.currency)}</span>
+          </button>`,
+        );
+        btn.onclick = () => void runShortcut(sc, active);
+        row.appendChild(btn);
+      }
+      root.appendChild(row);
+    }
   }
 
   // Transaction list
@@ -226,6 +256,111 @@ function render(): void {
     }
   }
   root.appendChild(list);
+}
+
+// --- quick buttons ---
+// A tap books the transaction immediately (that's the whole point of them); a
+// mis-tap is undone by tapping the row in the list below and deleting it.
+async function runShortcut(sc: LocalShortcut, acc: LocalAccount): Promise<void> {
+  if (navigator.vibrate) navigator.vibrate(15);
+  await addTx(acc.id, sc.amountOre, sc.note);
+  await refresh();
+  const amount = moneySigned(sc.amountOre, acc.currency);
+  flash(sc.note ? t('shortcut.flash', { note: sc.note, amount }) : amount);
+}
+
+// Create or edit one quick button. Reopens settings afterwards so you can keep
+// configuring. `existing` = null means "new".
+function openShortcutEditor(existing: LocalShortcut | null): void {
+  const cur = state.accounts.find((a) => a.id === state.activeId)?.currency ?? 'SEK';
+  const dec = getLang() === 'sv' ? ',' : '.';
+  const isSub = existing ? existing.amountOre < 0 : true;
+  const amountVal = existing ? (Math.abs(existing.amountOre) / 100).toString().replace('.', dec) : '';
+  // No explicit account list = shows on all accounts (including future ones).
+  const allAccs = existing ? existing.accountIds.length === 0 : true;
+
+  const content = el(`
+    <div class="form">
+      <h2>${esc(existing ? t('shortcut.edit.title') : t('shortcut.new.title'))}</h2>
+      <label>${esc(t('shortcut.kind'))}
+        <select id="sc-kind">
+          <option value="sub" ${isSub ? 'selected' : ''}>${esc(t('shortcut.kind.sub'))}</option>
+          <option value="add" ${isSub ? '' : 'selected'}>${esc(t('shortcut.kind.add'))}</option>
+        </select>
+      </label>
+      <label>${esc(t('shortcut.amount', { cur: currencySymbol(cur) }))}
+        <input id="sc-amt" inputmode="decimal" autocomplete="off" placeholder="${esc(t('shortcut.amount.ph'))}" value="${esc(amountVal)}">
+      </label>
+      <label>${esc(t('shortcut.note'))}
+        <input id="sc-note" placeholder="${esc(t('shortcut.note.ph'))}" value="${esc(existing?.note ?? '')}">
+      </label>
+      <div class="meta">${esc(t('shortcut.accounts'))}</div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="sc-all" ${allAccs ? 'checked' : ''}><span>${esc(t('shortcut.accounts.all'))}</span></label>
+        <div class="checks sub" id="sc-accs">
+          ${state.accounts
+            .map(
+              (a) =>
+                `<label class="check"><input type="checkbox" data-id="${esc(a.id)}" ${!allAccs && existing?.accountIds.includes(a.id) ? 'checked' : ''}><span class="swatch" style="background:${a.color}"></span><span>${esc(a.name)}</span></label>`,
+            )
+            .join('')}
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="sc-cancel">${esc(t('btn.cancel'))}</button>
+        <button class="btn primary" id="sc-ok">${esc(t('btn.save'))}</button>
+      </div>
+      ${existing ? `<button class="btn danger" id="sc-del">${esc(t('btn.delete'))}</button>` : ''}
+    </div>
+  `);
+  const close = openModal(content);
+
+  const allBox = content.querySelector<HTMLInputElement>('#sc-all')!;
+  const accBoxes = Array.from(content.querySelectorAll<HTMLInputElement>('#sc-accs input'));
+  const syncAllState = () => {
+    content.querySelector<HTMLDivElement>('#sc-accs')!.classList.toggle('disabled', allBox.checked);
+    for (const b of accBoxes) b.disabled = allBox.checked;
+  };
+  allBox.onchange = syncAllState;
+  syncAllState();
+
+  const amt = content.querySelector<HTMLInputElement>('#sc-amt')!;
+  if (!existing) setTimeout(() => amt.focus(), 60);
+
+  content.querySelector<HTMLButtonElement>('#sc-ok')!.onclick = async () => {
+    const ore = parseMoney(amt.value);
+    if (ore === null || ore <= 0) {
+      amt.focus();
+      amt.classList.add('shake');
+      setTimeout(() => amt.classList.remove('shake'), 400);
+      return;
+    }
+    const sign = content.querySelector<HTMLSelectElement>('#sc-kind')!.value === 'add' ? 1 : -1;
+    const note = content.querySelector<HTMLInputElement>('#sc-note')!.value;
+    // Ticking nothing would hide the button everywhere, so treat it as "all".
+    const picked = allBox.checked ? [] : accBoxes.filter((b) => b.checked).map((b) => b.dataset.id!);
+    if (existing) {
+      await updateShortcut(existing.id, { amountOre: sign * ore, note, accountIds: picked });
+    } else {
+      await createShortcut(sign * ore, note, picked);
+    }
+    close();
+    await refresh();
+    openSettings();
+  };
+
+  content.querySelector<HTMLButtonElement>('#sc-cancel')!.onclick = () => {
+    close();
+    openSettings();
+  };
+
+  content.querySelector<HTMLButtonElement>('#sc-del')?.addEventListener('click', async () => {
+    if (!existing || !confirm(t('confirm.delshortcut'))) return;
+    await deleteShortcut(existing.id);
+    close();
+    await refresh();
+    openSettings();
+  });
 }
 
 // --- amount entry (add / subtract) ---
@@ -382,6 +517,14 @@ function openSettings(): void {
         <button class="btn danger" id="s-delacc">${esc(t('settings.delacc'))}</button>`
           : ''
       }
+      ${
+        isReadonly()
+          ? ''
+          : `<hr>
+        <div class="meta"><b>${esc(t('settings.shortcuts'))}</b> — ${esc(t('settings.shortcuts.hint'))}</div>
+        <div class="sclist" id="s-sclist"></div>
+        <button class="btn" id="s-scnew">${esc(t('settings.shortcuts.new'))}</button>`
+      }
       <hr>
       <button class="btn" id="s-export">${esc(t('settings.export'))}</button>
       <button class="btn danger" id="s-logout">${esc(t('settings.logout'))}</button>
@@ -444,6 +587,41 @@ function openSettings(): void {
     state.activeId = null;
     close();
     await refresh();
+  });
+
+  const scList = content.querySelector<HTMLDivElement>('#s-sclist');
+  if (scList) {
+    const cur = acc?.currency ?? 'SEK';
+    if (state.shortcuts.length === 0) {
+      scList.appendChild(el(`<div class="meta">${esc(t('settings.shortcuts.none'))}</div>`));
+    }
+    for (const sc of state.shortcuts) {
+      const where = sc.accountIds.length
+        ? state.accounts
+            .filter((a) => sc.accountIds.includes(a.id))
+            .map((a) => a.name)
+            .join(', ')
+        : t('shortcut.accounts.all');
+      const row = el(
+        `<button class="scrow">
+          <span class="tbody">
+            <span class="tnote">${sc.note ? esc(sc.note) : `<span class="muted">${esc(t('dash'))}</span>`}</span>
+            <span class="who">${esc(where)}</span>
+          </span>
+          <span class="tamt ${sc.amountOre < 0 ? 'neg' : 'pos'}">${moneySigned(sc.amountOre, cur)}</span>
+        </button>`,
+      );
+      row.onclick = () => {
+        close();
+        openShortcutEditor(sc);
+      };
+      scList.appendChild(row);
+    }
+  }
+
+  content.querySelector<HTMLButtonElement>('#s-scnew')?.addEventListener('click', () => {
+    close();
+    openShortcutEditor(null);
   });
 
   content.querySelector<HTMLButtonElement>('#s-export')!.onclick = async () => {

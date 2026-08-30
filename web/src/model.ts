@@ -1,11 +1,14 @@
 import {
   getAccount,
+  getShortcut,
   getTx,
   putAccountLocal,
+  putShortcutLocal,
   putTxLocal,
   txsForAccount,
   uuid,
   type LocalAccount,
+  type LocalShortcut,
   type LocalTx,
 } from './store';
 import { getUser } from './auth';
@@ -135,5 +138,52 @@ export async function deleteTx(id: string): Promise<void> {
   const t = await getTx(id);
   if (!t) return;
   await putTxLocal({ ...t, deleted: 1, updatedAt: now(), dirty: 1 });
+  kick();
+}
+
+// --- quick buttons (shortcuts) ---
+// `amountOre` carries the sign: + = money in, - = money out. `accountIds` lists
+// the accounts the button shows on; an empty list means every account (including
+// ones created later).
+export async function createShortcut(
+  amountOre: number,
+  note: string,
+  accountIds: string[],
+): Promise<LocalShortcut> {
+  const t = now();
+  const shortcut: LocalShortcut = {
+    id: uuid(),
+    amountOre: Math.round(amountOre),
+    note: note.trim(),
+    accountIds: [...accountIds],
+    createdAt: t,
+    updatedAt: t,
+    deleted: 0,
+    seq: 0,
+    dirty: 1,
+  };
+  await putShortcutLocal(shortcut);
+  kick();
+  return shortcut;
+}
+
+export async function updateShortcut(
+  id: string,
+  patch: { amountOre?: number; note?: string; accountIds?: string[] },
+): Promise<void> {
+  const sc = await getShortcut(id);
+  if (!sc) return;
+  const next: LocalShortcut = { ...sc, ...patch, updatedAt: now(), dirty: 1 };
+  if (patch.amountOre !== undefined) next.amountOre = Math.round(patch.amountOre);
+  if (patch.note !== undefined) next.note = patch.note.trim();
+  if (patch.accountIds !== undefined) next.accountIds = [...patch.accountIds];
+  await putShortcutLocal(next);
+  kick();
+}
+
+export async function deleteShortcut(id: string): Promise<void> {
+  const sc = await getShortcut(id);
+  if (!sc) return;
+  await putShortcutLocal({ ...sc, deleted: 1, updatedAt: now(), dirty: 1 });
   kick();
 }

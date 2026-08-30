@@ -41,11 +41,27 @@ export interface Tx {
   seq: number;
 }
 
+// A configurable quick button ("snabbknapp") for something you register often,
+// e.g. "Robux −65 kr". Tapping it books the transaction straight away.
+// The sign of `amountOre` is the kind: + = money in, - = money out.
+export interface Shortcut {
+  id: string;
+  amountOre: number; // + = money in, - = money out (never 0)
+  note: string; // what shows on the button, e.g. 'Robux'
+  accountIds: string[]; // which accounts it shows on; EMPTY = all accounts
+
+  createdAt: number;
+  updatedAt: number;
+  deleted: 0 | 1;
+  seq: number;
+}
+
 // What the client pushes up: records made dirty since the last sync.
 export interface SyncRequest {
   since: number; // highest seq the client has already seen
   accounts: Account[];
   txs: Tx[];
+  shortcuts?: Shortcut[]; // optional: clients predating quick buttons omit it
 }
 
 // What the server responds with: everything changed since `since` (after the push applied).
@@ -53,4 +69,5 @@ export interface SyncResponse {
   seq: number; // new high-water mark
   accounts: Account[];
   txs: Tx[];
+  shortcuts: Shortcut[];
 }
