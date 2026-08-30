@@ -1,6 +1,6 @@
 {
   "name": "kassa",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Local-first checkbook: track a balance, add/subtract money, with weekly allowance. Offline PWA with sync.",
