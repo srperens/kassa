@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { SyncRequest, SyncResponse } from '../shared/types.js';
-import { applyAccount, applyTx, changesSince, currentSeq, tx } from './db.js';
+import { applyAccount, applyShortcut, applyTx, changesSince, currentSeq, tx } from './db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +63,7 @@ app.post('/api/sync', async (req, reply) => {
     if (!principal.readonly) {
       for (const account of body.accounts ?? []) applyAccount(account);
       for (const t of body.txs ?? []) applyTx(t);
+      for (const s of body.shortcuts ?? []) applyShortcut(s);
     }
     const changes = changesSince(since);
     return { seq: currentSeq(), ...changes };

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { Account, Tx } from '../shared/types.js';
+import type { Account, Shortcut, Tx } from '../shared/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.KASSA_DB ?? join(__dirname, '..', 'kassa.sqlite');
@@ -36,12 +36,23 @@ db.exec(`
     deleted   INTEGER NOT NULL DEFAULT 0,
     seq       INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS shortcuts (
+    id         TEXT PRIMARY KEY,
+    amountOre  INTEGER NOT NULL DEFAULT 0,
+    note       TEXT NOT NULL DEFAULT '',
+    accountIds TEXT NOT NULL DEFAULT '[]',
+    createdAt  INTEGER NOT NULL,
+    updatedAt  INTEGER NOT NULL,
+    deleted    INTEGER NOT NULL DEFAULT 0,
+    seq        INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_accounts_seq ON accounts(seq);
   CREATE INDEX IF NOT EXISTS idx_txs_seq      ON txs(seq);
+  CREATE INDEX IF NOT EXISTS idx_shortcuts_seq ON shortcuts(seq);
   INSERT OR IGNORE INTO meta (key, value) VALUES ('seq', 0);
 `);
 
@@ -71,9 +82,22 @@ function rowToAccount(r: Account): Account {
 function rowToTx(r: Tx): Tx {
   return { ...r, deleted: r.deleted ? 1 : 0 };
 }
+// accountIds is a JSON array in a TEXT column; a bad/missing value means "all accounts".
+type ShortcutRow = Omit<Shortcut, 'accountIds'> & { accountIds: string };
+function rowToShortcut(r: ShortcutRow): Shortcut {
+  let accountIds: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(r.accountIds || '[]');
+    if (Array.isArray(parsed)) accountIds = parsed.filter((x): x is string => typeof x === 'string');
+  } catch {
+    // leave empty = all accounts
+  }
+  return { ...r, accountIds, deleted: r.deleted ? 1 : 0 };
+}
 
 const selAccount = db.prepare(`SELECT * FROM accounts WHERE id = ?`);
 const selTx = db.prepare(`SELECT * FROM txs WHERE id = ?`);
+const selShortcut = db.prepare(`SELECT * FROM shortcuts WHERE id = ?`);
 
 const upAccount = db.prepare(`
   INSERT INTO accounts (id, name, color, currency, allowanceOre, allowanceWeekday, allowanceStart, createdAt, updatedAt, deleted, seq)
@@ -91,6 +115,14 @@ const upTx = db.prepare(`
     createdAt=@createdAt, updatedAt=@updatedAt, deleted=@deleted, seq=@seq
 `);
 
+const upShortcut = db.prepare(`
+  INSERT INTO shortcuts (id, amountOre, note, accountIds, createdAt, updatedAt, deleted, seq)
+  VALUES (@id, @amountOre, @note, @accountIds, @createdAt, @updatedAt, @deleted, @seq)
+  ON CONFLICT(id) DO UPDATE SET
+    amountOre=@amountOre, note=@note, accountIds=@accountIds,
+    createdAt=@createdAt, updatedAt=@updatedAt, deleted=@deleted, seq=@seq
+`);
+
 // Last-write-wins: only apply if the incoming record is newer than ours.
 export function applyAccount(incoming: Account): void {
   const existing = selAccount.get(incoming.id) as Account | undefined;
@@ -105,10 +137,22 @@ export function applyTx(incoming: Tx): void {
   upTx.run({ ...incoming, deleted: incoming.deleted ? 1 : 0, seq: nextSeq() });
 }
 
-export function changesSince(since: number): { accounts: Account[]; txs: Tx[] } {
+export function applyShortcut(incoming: Shortcut): void {
+  const existing = selShortcut.get(incoming.id) as ShortcutRow | undefined;
+  if (existing && existing.updatedAt > incoming.updatedAt) return;
+  upShortcut.run({
+    ...incoming,
+    accountIds: JSON.stringify(Array.isArray(incoming.accountIds) ? incoming.accountIds : []),
+    deleted: incoming.deleted ? 1 : 0,
+    seq: nextSeq(),
+  });
+}
+
+export function changesSince(since: number): { accounts: Account[]; txs: Tx[]; shortcuts: Shortcut[] } {
   const accounts = (db.prepare(`SELECT * FROM accounts WHERE seq > ? ORDER BY seq`).all(since) as Account[]).map(rowToAccount);
   const txs = (db.prepare(`SELECT * FROM txs WHERE seq > ? ORDER BY seq`).all(since) as Tx[]).map(rowToTx);
-  return { accounts, txs };
+  const shortcuts = (db.prepare(`SELECT * FROM shortcuts WHERE seq > ? ORDER BY seq`).all(since) as ShortcutRow[]).map(rowToShortcut);
+  return { accounts, txs, shortcuts };
 }
 
 export function currentSeq(): number {

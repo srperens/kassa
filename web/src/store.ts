@@ -1,26 +1,37 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Account, Tx } from '../../shared/types';
+import type { Account, Shortcut, Tx } from '../../shared/types';
 
 // Local records carry a `dirty` flag: 1 = changed since last sync, needs pushing.
 export type LocalAccount = Account & { dirty: 0 | 1 };
 export type LocalTx = Tx & { dirty: 0 | 1 };
+export type LocalShortcut = Shortcut & { dirty: 0 | 1 };
 
 interface KassaDB extends DBSchema {
   accounts: { key: string; value: LocalAccount };
   txs: { key: string; value: LocalTx; indexes: { byAccount: string } };
   kv: { key: string; value: unknown };
+  shortcuts: { key: string; value: LocalShortcut };
 }
 
 let dbp: Promise<IDBPDatabase<KassaDB>> | null = null;
 
 function getDB(): Promise<IDBPDatabase<KassaDB>> {
   if (!dbp) {
-    dbp = openDB<KassaDB>('kassa', 1, {
+    // v2 added the `shortcuts` store, so every store is created defensively —
+    // the callback also runs on existing v1 databases being upgraded.
+    dbp = openDB<KassaDB>('kassa', 2, {
       upgrade(db) {
-        db.createObjectStore('accounts', { keyPath: 'id' });
-        const txs = db.createObjectStore('txs', { keyPath: 'id' });
-        txs.createIndex('byAccount', 'accountId');
-        db.createObjectStore('kv');
+        if (!db.objectStoreNames.contains('accounts')) {
+          db.createObjectStore('accounts', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('txs')) {
+          const txs = db.createObjectStore('txs', { keyPath: 'id' });
+          txs.createIndex('byAccount', 'accountId');
+        }
+        if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+        if (!db.objectStoreNames.contains('shortcuts')) {
+          db.createObjectStore('shortcuts', { keyPath: 'id' });
+        }
       },
     });
   }
@@ -82,6 +93,26 @@ export async function putTxLocal(t: LocalTx): Promise<void> {
   await (await getDB()).put('txs', t);
 }
 
+// --- quick buttons (shortcuts) ---
+// A shortcut with an empty `accountIds` applies to every account.
+function normShortcut(s: LocalShortcut): LocalShortcut {
+  return Array.isArray(s.accountIds) ? s : { ...s, accountIds: [] };
+}
+export async function allShortcuts(): Promise<LocalShortcut[]> {
+  const all = await (await getDB()).getAll('shortcuts');
+  return all
+    .filter((s) => !s.deleted)
+    .map(normShortcut)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+export async function getShortcut(id: string): Promise<LocalShortcut | undefined> {
+  const s = await (await getDB()).get('shortcuts', id);
+  return s ? normShortcut(s) : s;
+}
+export async function putShortcutLocal(s: LocalShortcut): Promise<void> {
+  await (await getDB()).put('shortcuts', s);
+}
+
 // Current balance of an account, in öre (sum of all live transactions).
 export async function balanceOf(accountId: string): Promise<number> {
   const txs = await txsForAccount(accountId);
@@ -127,4 +158,7 @@ export async function dirtyAccounts(): Promise<LocalAccount[]> {
 }
 export async function dirtyTxs(): Promise<LocalTx[]> {
   return (await (await getDB()).getAll('txs')).filter((t) => t.dirty);
+}
+export async function dirtyShortcuts(): Promise<LocalShortcut[]> {
+  return (await (await getDB()).getAll('shortcuts')).filter((s) => s.dirty);
 }

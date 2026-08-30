@@ -1,12 +1,15 @@
-import type { Account, Tx, SyncRequest, SyncResponse } from '../../shared/types';
+import type { Account, Shortcut, Tx, SyncRequest, SyncResponse } from '../../shared/types';
 import {
   dirtyAccounts,
+  dirtyShortcuts,
   dirtyTxs,
   getAccount,
+  getShortcut,
   getTx,
   kvGet,
   kvSet,
   putAccountLocal,
+  putShortcutLocal,
   putTxLocal,
 } from './store';
 import { getToken, logout } from './auth';
@@ -53,11 +56,13 @@ export async function sync(): Promise<void> {
     const since = (await kvGet<number>('lastSeq')) ?? 0;
     const localAccounts = await dirtyAccounts();
     const localTxs = await dirtyTxs();
+    const localShortcuts = await dirtyShortcuts();
 
     const body: SyncRequest = {
       since,
       accounts: localAccounts.map(strip),
       txs: localTxs.map(strip),
+      shortcuts: localShortcuts.map(strip),
     };
 
     const res = await fetch('/api/sync', {
@@ -83,6 +88,10 @@ export async function sync(): Promise<void> {
       const cur = await getTx(t.id);
       if (cur && cur.updatedAt === t.updatedAt) await putTxLocal({ ...cur, dirty: 0 });
     }
+    for (const sc of localShortcuts) {
+      const cur = await getShortcut(sc.id);
+      if (cur && cur.updatedAt === sc.updatedAt) await putShortcutLocal({ ...cur, dirty: 0 });
+    }
 
     // Apply the server's changes (LWW): only write if the server's is newer.
     for (const a of data.accounts) {
@@ -94,6 +103,11 @@ export async function sync(): Promise<void> {
       const cur = await getTx(t.id);
       if (!cur && !t.deleted) freshIncoming.push(t); // brand new to this device
       if (!cur || t.updatedAt >= cur.updatedAt) await putTxLocal({ ...t, dirty: 0 });
+    }
+
+    for (const sc of data.shortcuts ?? []) {
+      const cur = await getShortcut(sc.id);
+      if (!cur || sc.updatedAt >= cur.updatedAt) await putShortcutLocal({ ...sc, dirty: 0 });
     }
 
     await kvSet('lastSeq', data.seq);
@@ -109,7 +123,7 @@ export async function sync(): Promise<void> {
   }
 }
 
-function strip<T extends Account | Tx>(r: T & { dirty?: 0 | 1 }): T {
+function strip<T extends Account | Tx | Shortcut>(r: T & { dirty?: 0 | 1 }): T {
   const { dirty, ...rest } = r;
   return rest as T;
 }

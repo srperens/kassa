@@ -187,6 +187,46 @@ button {
   color: #ffd4d4;
 }
 
+/* Quick buttons (configurable shortcuts) */
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -10px 0 20px;
+}
+.sc {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 11px 16px;
+  font-size: 15px;
+  background: var(--panel);
+  transition: transform 0.08s ease;
+}
+.sc:active {
+  transform: scale(0.96);
+}
+.sc-note {
+  font-weight: 600;
+}
+.sc-amt {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  opacity: 0.85;
+}
+.sc.add {
+  background: color-mix(in srgb, var(--add) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--add) 34%, var(--line));
+  color: #c7f9dc;
+}
+.sc.sub {
+  background: color-mix(in srgb, var(--sub) 13%, var(--panel));
+  border-color: color-mix(in srgb, var(--sub) 32%, var(--line));
+  color: #ffd4d4;
+}
+
 /* Transaction list */
 .txs {
   display: flex;
@@ -469,6 +509,61 @@ code {
   background: var(--bg);
   padding: 1px 5px;
   border-radius: 5px;
+}
+
+/* Quick buttons in settings */
+.sclist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.scrow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  width: 100%;
+}
+.scrow:active {
+  background: var(--panel-2);
+}
+
+/* Checkbox lists (which accounts a quick button shows on) */
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+}
+.checks.sub {
+  margin: 0 0 0 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.checks.sub.disabled {
+  opacity: 0.4;
+}
+.form .check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 15px;
+  margin: 0;
+  padding: 9px 2px;
+}
+.form .check input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0;
+  accent-color: #2563eb;
 }
 
 /* Invalid-amount nudge */
